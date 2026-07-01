@@ -99,9 +99,39 @@ pub fn check_typosquat(parsed: &Url) -> Option<String> {
     None
 }
 
+/// Check if the URL contains a '@' symbol used to disguise the real host.
+/// Example: "https://google.com@evil.com" actually navigates to evil.com.
+/// The part before '@' is treated as userinfo (username), which most servers ignore.
+/// I'm not using URL as input because the parsed URL will correctly parse the evil.com instead
+/// missing the whole point of '@' symbol.
+pub fn check_at_symbol_trick(raw: &str) -> Option<String> {
+    // We check the raw string, not the parsed URL, because we want to catch
+    // this trick even if the URL parser normalizes it away.
+    // First, strip the scheme (https://, http://) to avoid false positives
+    // from "mailto:" style URIs.
+    let after_scheme = if let Some(pos) = raw.find("://") {
+        &raw[pos + 3..]
+    } else {
+        raw
+    };
+
+    // If there's an '@' before the first '/', someone is using the userinfo trick
+    let before_path = match after_scheme.find("/") {
+        Some(pos) => &after_scheme[..pos],
+        None => after_scheme,
+    };
+
+    if before_path.contains('@') {
+        Some(format!(
+            "URL contains '@' symbol - the real destination may be hidden (userinfo trick)"
+        ))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::thread::park;
 
     use super::*;
 
@@ -155,5 +185,17 @@ mod tests {
         let url = Url::parse("https://myblog.com").unwrap();
         let result = check_typosquat(&url);
         assert!(result.is_none(), "Should not flag unrelated domain");
+    }
+
+    #[test]
+    fn test_at_symbol_trick_detected() {
+        let result = check_at_symbol_trick("https://google.com@evil.com/login");
+        assert!(result.is_some(), "Should flag @ trick");
+    }
+
+    #[test]
+    fn test_at_symbol_normal_url() {
+        let result = check_at_symbol_trick("https://google.com/search?q=rust");
+        assert!(result.is_none(), "Should not flag normal URL");
     }
 }
