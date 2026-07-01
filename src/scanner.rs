@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::fmt::format;
+use std::fs;
+use std::path::Path;
 use strsim::levenshtein;
 use url::Url;
 
@@ -181,6 +185,37 @@ pub fn check_excessive_length(raw: &str, parsed: &Url) -> Option<String> {
     }
 }
 
+/// Load a blocklist file where each line is one known-bad domain.
+/// Blank lines and lines starting with '#' are ignored.
+pub fn load_blocklist(path: &Path) -> HashSet<String> {
+    let content = match fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(_) => return HashSet::new(), // missing file = empty list, not a crash
+    };
+
+    content
+        .lines()
+        .map(|line| line.trim().to_lowercase())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect()
+}
+
+/// Check if the URL's domain matches any entry in the known-bad blocklist.
+/// This is signature-based detection - it catches threats but not new ones.
+pub fn check_known_bad(parsed: &Url, blocklist: &HashSet<String>) -> Option<String> {
+    let host = parsed.host_str()?.to_lowercase();
+    let domain = host.strip_prefix("www.").unwrap_or(&host);
+
+    if blocklist.contains(domain) {
+        Some(format!(
+            "Domain \"{}\" matches known-bad blocklist entry",
+            domain
+        ))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -295,5 +330,36 @@ mod tests {
         let parsed = Url::parse(url_str).unwrap();
         let result = check_excessive_length(url_str, &parsed);
         assert!(result.is_none(), "Should not flag short, simple URL");
+    }
+
+    #[test]
+    fn test_known_bad_match() {
+        let blocklist: HashSet<String> = vec![
+            "evil-phishing-site.com".to_string(),
+            "malware-download.net".to_string(),
+        ]
+        .into_iter()
+        .collect();
+        let url = Url::parse("https://evil-phishing-site.com/login").unwrap();
+        let result = check_known_bad(&url, &blocklist);
+        assert!(result.is_some(), "Should flag known-bad domain");
+    }
+
+    #[test]
+    fn test_known_bad_no_match() {
+        let blocklist: HashSet<String> = vec!["evil-phishing-site.com".to_string()]
+            .into_iter()
+            .collect();
+        let url = Url::parse("https://google.com").unwrap();
+        let result = check_known_bad(&url, &blocklist);
+        assert!(result.is_none(), "Should not flag clean domain");
+    }
+
+    #[test]
+    fn test_known_bad_empty_blocklist() {
+        let blocklist: HashSet<String> = HashSet::new();
+        let url = Url::parse("https://anything.com").unwrap();
+        let result = check_known_bad(&url, &blocklist);
+        assert!(result.is_none(), "Empty blocklist should flag nothing");
     }
 }
