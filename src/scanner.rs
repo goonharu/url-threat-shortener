@@ -229,6 +229,29 @@ impl std::fmt::Display for ScanError {
     }
 }
 
+/// Attempt to normalize a raw URL input.
+/// If the user forgets the scheme (e.g. "google.com"), prepend "https://".
+pub fn normalize_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+
+    // Already has a scheme
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return trimmed.to_string();
+    }
+
+    // Looks like a domain (contains a dot) - prepend https://
+    if trimmed.contains('.') && !trimmed.contains(' ') {
+        return format!("https://{}", trimmed);
+    }
+
+    // Return as-is and let the parser give a proper error
+    trimmed.to_string()
+}
+
 impl std::error::Error for ScanError {}
 
 /// Run all heuristic checks against a URL and return a unified scan result.
@@ -239,8 +262,21 @@ impl std::error::Error for ScanError {}
 /// 3. Collects flags from checks that triggered
 /// 4. Calculates a risk score and level based on how many checks flagged
 pub fn scan_url(raw: &str, blocklist: &HashSet<String>) -> Result<ScanResult, ScanError> {
+    // Normalize the input
+    let normalized = normalize_url(raw);
+
+    // Better error message for empty input
+    if normalized.is_empty() {
+        return Err(ScanError::InvalidUrl("URL cannot be empty".to_string()));
+    }
+
     // Step 1: Parse the URL - fail early if it's not valid
-    let parsed = Url::parse(raw).map_err(|e| ScanError::InvalidUrl(e.to_string()))?;
+    let parsed = Url::parse(&normalized).map_err(|_| {
+        ScanError::InvalidUrl(format!(
+            "\"{}\" is not a valid URL. Example: https://example.com",
+            raw
+        ))
+    })?;
 
     // Step 2: Run all checks, collecting any flags
     let mut flags: Vec<String> = Vec::new();
@@ -461,5 +497,40 @@ mod tests {
         let blocklist = HashSet::new();
         let result = scan_url("not a url at all", &blocklist);
         assert!(result.is_err(), "Should return error for invalid URL");
+    }
+
+    #[test]
+    fn test_normalize_adds_scheme() {
+        let result = normalize_url("google.com");
+        assert_eq!(result, "https://google.com");
+    }
+
+    #[test]
+    fn test_normalize_preserves_existing_scheme() {
+        let result = normalize_url("http://example.com");
+        assert_eq!(result, "http://example.com");
+    }
+
+    #[test]
+    fn test_normalize_trims_whitespace() {
+        let result = normalize_url("  https://example.com  ");
+        assert_eq!(result, "https://example.com");
+    }
+
+    #[test]
+    fn test_scan_url_empty_input() {
+        let blocklist = HashSet::new();
+        let result = scan_url("", &blocklist);
+        assert!(result.is_err(), "Empty input should error");
+    }
+
+    #[test]
+    fn test_scan_url_without_scheme() {
+        let blocklist = HashSet::new();
+        let result = scan_url("google.com", &blocklist);
+        assert!(
+            result.is_ok(),
+            "Should auto-add https:// and scan successfully"
+        );
     }
 }
