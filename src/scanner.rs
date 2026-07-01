@@ -130,6 +130,24 @@ pub fn check_at_symbol_trick(raw: &str) -> Option<String> {
     }
 }
 
+/// Check if the domain uses Punycode (xn-- prefix), which may indicate
+/// a homograph attack using lookalike Unicode characters.
+/// Example: "xn--pple-43d.com" renders as "apple.com" (Cyrillic 'a').
+pub fn check_punycode(parsed: &Url) -> Option<String> {
+    let host = parsed.host_str()?;
+
+    // Check each label (subdomain part) for the xn-- prefix
+    for label in host.split('.') {
+        if label.starts_with("xn--") {
+            return Some(format!(
+                "Domain contains Punycode label \"{}\" - possible homograph attack",
+                label
+            ));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -197,5 +215,28 @@ mod tests {
     fn test_at_symbol_normal_url() {
         let result = check_at_symbol_trick("https://google.com/search?q=rust");
         assert!(result.is_none(), "Should not flag normal URL");
+    }
+
+    #[test]
+    fn test_punycode_detected() {
+        // This is "аpple.com" with a Cyrillic 'а' encoded as punycode
+        let url = Url::parse("https://xn--pple-43d.com").unwrap();
+        let result = check_punycode(&url);
+        assert!(result.is_some(), "Should flag punycode domain");
+    }
+
+    #[test]
+    fn test_punycode_normal_domain() {
+        let url = Url::parse("https://apple.com").unwrap();
+        let result = check_punycode(&url);
+        assert!(result.is_none(), "Should not flag normal ASCII domain");
+    }
+
+    #[test]
+    fn test_punycode_in_subdomain() {
+        // xn--n3h decodes to ☃ (snowman emoji) — valid punycode
+        let url = Url::parse("https://xn--n3h.example.com").unwrap();
+        let result = check_punycode(&url);
+        assert!(result.is_some(), "Should flag punycode in subdomain");
     }
 }
