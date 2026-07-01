@@ -1,0 +1,28 @@
+# Suspicious/malicious test URLs — should trigger various heuristics
+# WARNING: These are intentionally crafted examples for testing.
+# None of these are real sites (or if they are, it's coincidental).
+
+# Suspicious TLD
+https://free-prize.tk/claim
+https://login-verify.xyz/account
+
+# IP literal
+http://192.168.1.1/admin/login
+http://10.0.0.1/dashboard
+
+# Typosquat
+https://paypa1.com/login
+https://gooogle.com/search
+https://amaz0n.com/deals
+
+# @ symbol trick
+https://google.com@evil.com/steal
+
+# Punycode (homograph)
+https://xn--n3h.com/login
+
+# Excessive length / subdomain nesting
+https://secure.login.verify.account.update.example.com/auth
+
+# Multiple flags at once
+https://paypa1.tk/login

@@ -1,0 +1,10 @@
+# Mix of clean and suspicious URLs
+# Useful for demonstrating batch-style analysis
+https://google.com
+https://free-money.tk/win
+https://github.com
+http://192.168.1.1/login
+https://rust-lang.org
+https://google.com@evil.com
+https://example.com
+https://paypa1.com/verify

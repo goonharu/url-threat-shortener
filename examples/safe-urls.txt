@@ -1,0 +1,6 @@
+# Clean, legitimate URLs — should all scan as LOW RISK
+https://google.com
+https://github.com
+https://rust-lang.org
+https://www.wikipedia.org
+https://stackoverflow.com
