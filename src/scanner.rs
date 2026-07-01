@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::fmt::format;
 use std::fs;
 use std::path::Path;
 use strsim::levenshtein;
@@ -216,10 +215,74 @@ pub fn check_known_bad(parsed: &Url, blocklist: &HashSet<String>) -> Option<Stri
     }
 }
 
+/// Errors that can occur during scanning
+#[derive(Debug)]
+pub enum ScanError {
+    InvalidUrl(String),
+}
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanError::InvalidUrl(msg) => write!(f, "Invalid URL: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for ScanError {}
+
+/// Run all heuristic checks against a URL and return a unified scan result.
+///
+/// This is the main entry point for the scanner module. It:
+/// 1. Validates and parses the URL
+/// 2. Runs every heuristic check
+/// 3. Collects flags from checks that triggered
+/// 4. Calculates a risk score and level based on how many checks flagged
+pub fn scan_url(raw: &str, blocklist: &HashSet<String>) -> Result<ScanResult, ScanError> {
+    // Step 1: Parse the URL - fail early if it's not valid
+    let parsed = Url::parse(raw).map_err(|e| ScanError::InvalidUrl(e.to_string()))?;
+
+    // Step 2: Run all checks, collecting any flags
+    let mut flags: Vec<String> = Vec::new();
+
+    if let Some(flag) = check_ip_literal(&parsed) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_suspicious_tld(&parsed) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_typosquat(&parsed) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_at_symbol_trick(raw) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_punycode(&parsed) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_excessive_length(raw, &parsed) {
+        flags.push(flag);
+    }
+    if let Some(flag) = check_known_bad(&parsed, blocklist) {
+        flags.push(flag);
+    }
+
+    // Step 3: Calculate risk based on number of flags
+    let score = flags.len() as u32;
+    let risk = match score {
+        0 => RiskLevel::Low,
+        1..=2 => RiskLevel::Medium,
+        _ => RiskLevel::High,
+    };
+
+    Ok(ScanResult { risk, score, flags })
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_ip_literal_ipv4() {
@@ -361,5 +424,42 @@ mod tests {
         let url = Url::parse("https://anything.com").unwrap();
         let result = check_known_bad(&url, &blocklist);
         assert!(result.is_none(), "Empty blocklist should flag nothing");
+    }
+
+    #[test]
+    fn test_scan_url_clean() {
+        let blocklist = HashSet::new();
+        let result = scan_url("https://google.com", &blocklist).unwrap();
+        assert_eq!(result.risk, RiskLevel::Low);
+        assert_eq!(result.score, 0);
+        assert!(result.flags.is_empty());
+    }
+
+    #[test]
+    fn test_scan_url_multiple_flags() {
+        // This URL should trigger: suspicious TLD + known bad
+        let blocklist: HashSet<String> = vec!["evil-site.tk".to_string()].into_iter().collect();
+        let result = scan_url("https://evil-site.tk/steal", &blocklist).unwrap();
+        assert!(result.score >= 2, "Should flag at least TLD + known bad");
+        assert_eq!(result.risk, RiskLevel::Medium);
+    }
+
+    #[test]
+    fn test_scan_url_high_risk() {
+        // IP literal + suspicious TLD won't combine (IP has no TLD),
+        // so let's use: known bad + suspicious TLD + excessive length
+        let long_path = "a".repeat(200);
+        let bad_url = format!("https://evil-site.tk/{}", long_path);
+        let blocklist: HashSet<String> = vec!["evil-site.tk".to_string()].into_iter().collect();
+        let result = scan_url(&bad_url, &blocklist).unwrap();
+        assert!(result.score >= 3, "Should flag TLD + known bad + length");
+        assert_eq!(result.risk, RiskLevel::High);
+    }
+
+    #[test]
+    fn test_scan_url_invalid_input() {
+        let blocklist = HashSet::new();
+        let result = scan_url("not a url at all", &blocklist);
+        assert!(result.is_err(), "Should return error for invalid URL");
     }
 }
