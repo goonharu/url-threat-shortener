@@ -1,12 +1,13 @@
-mod scanner;
-mod shortener;
+use url_threat_shortener::scanner;
 
 use clap::{Parser, Subcommand};
 use dialoguer::{Input, Select};
 use std::path::PathBuf;
 
-use scanner::{RiskLevel, load_blocklist, scan_url};
-use shortener::{UrlMapping, generate_code, resolve, save_mapping, timestamp_now};
+use url_threat_shortener::scanner::{RiskLevel, load_blocklist, scan_url};
+use url_threat_shortener::shortener::{
+    UrlMapping, generate_code, resolve, save_mapping, timestamp_now,
+};
 
 const BANNER: &str = concat!(
     "\n",
