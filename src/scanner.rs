@@ -1,6 +1,5 @@
-use std::fmt::format;
-
 use serde::{Deserialize, Serialize};
+use strsim::levenshtein;
 use url::Url;
 
 /// Risk level assigned after scanning a URL
@@ -53,8 +52,57 @@ pub fn check_suspicious_tld(parsed: &Url) -> Option<String> {
     None
 }
 
+/// Well-known domains to check against for typosquatting.
+/// Could be bigger, if we want.
+const POPULAR_DOMAINS: &[&str] = &[
+    "google.com",
+    "facebook.com",
+    "amazon.com",
+    "apple.com",
+    "microsoft.com",
+    "paypal.com",
+    "netflix.com",
+    "instagram.com",
+    "twitter.com",
+    "linkedin.com",
+    "github.com",
+    "yahoo.com",
+    "chase.com",
+    "wellsfargo.com",
+    "bankofamerica.com",
+];
+
+/// Check if the URL's domain is suspiciously close to a well-known domain.
+/// Uses levenshtein distance to detect typosquatting attempts like
+/// "paypa1.com" (distance 1 from "paypal.com").
+pub fn check_typosquat(parsed: &Url) -> Option<String> {
+    let host = parsed.host_str()?;
+
+    // Strip "www." prefix if present so "www.google.com" still gets checked
+    let domain = host.strip_prefix("www.").unwrap_or(host);
+
+    // Don't flag exact matches - that's the real site
+    if POPULAR_DOMAINS.contains(&domain) {
+        return None;
+    }
+
+    for &legit in POPULAR_DOMAINS {
+        let distance = levenshtein(domain, legit);
+        // Distance of 1-2 = suspiciously close but not identical
+        if distance >= 1 && distance <= 2 {
+            return Some(format!(
+                "Possible typosquat: \"{}\" is {} edit(s) from \"{}\"",
+                domain, distance, legit
+            ));
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
+    use std::thread::park;
+
     use super::*;
 
     #[test]
@@ -83,5 +131,29 @@ mod tests {
         let url = Url::parse("http://example.com").unwrap();
         let result = check_suspicious_tld(&url);
         assert!(result.is_none(), "Should not flag .com TLD");
+    }
+
+    #[test]
+    fn test_typosquat_detected() {
+        let url = Url::parse("https://paypa1.com/login").unwrap();
+        let result = check_typosquat(&url);
+        assert!(
+            result.is_some(),
+            "Should flag paypa1.com as typosquat of paypal.com"
+        );
+    }
+
+    #[test]
+    fn test_typosquat_exact_match_not_flagged() {
+        let url = Url::parse("https://paypal.com").unwrap();
+        let result = check_typosquat(&url);
+        assert!(result.is_none(), "Should not flag the real paypal.com");
+    }
+
+    #[test]
+    fn test_typosquat_unrelated_domain() {
+        let url = Url::parse("https://myblog.com").unwrap();
+        let result = check_typosquat(&url);
+        assert!(result.is_none(), "Should not flag unrelated domain");
     }
 }
