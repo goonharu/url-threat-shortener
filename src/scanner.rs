@@ -148,6 +148,39 @@ pub fn check_punycode(parsed: &Url) -> Option<String> {
     None
 }
 
+/// Check if the URL is excessibely long or has too many subdomains.
+/// Phishing URLs are often apdded with keywords or random strings to
+/// push the real domain out of view in the browser address bar.
+pub fn check_excessive_length(raw: &str, parsed: &Url) -> Option<String> {
+    let mut reasons = Vec::new();
+
+    // Flag URLs over 100 characters total
+    if raw.len() > 100 {
+        reasons.push(format!(
+            "URL is {} characters long (threshold: 100)",
+            raw.len()
+        ));
+    }
+
+    // Flag domains with more than 3 subdomain levels
+    // e.g. "a.b.c.d.evil.com" has 6 labels - that's suspicious
+    if let Some(host) = parsed.host_str() {
+        let label_count = host.split('.').count();
+        if label_count > 3 {
+            reasons.push(format!(
+                "Domain has {} levels (e.g. \"{}\" - threshold: 3)",
+                label_count, host
+            ));
+        }
+    }
+
+    if reasons.is_empty() {
+        None
+    } else {
+        Some(reasons.join("; "))
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -238,5 +271,29 @@ mod tests {
         let url = Url::parse("https://xn--n3h.example.com").unwrap();
         let result = check_punycode(&url);
         assert!(result.is_some(), "Should flag punycode in subdomain");
+    }
+
+    #[test]
+    fn test_excessive_length_long_url() {
+        let long_url = format!("https://example.com/{}", "a".repeat(200));
+        let parsed = Url::parse(&long_url).unwrap();
+        let result = check_excessive_length(&long_url, &parsed);
+        assert!(result.is_some(), "Should flag URL over 100 chars");
+    }
+
+    #[test]
+    fn test_excessive_length_many_subdomains() {
+        let url_str = "https://a.b.c.d.evil.com/page";
+        let parsed = Url::parse(url_str).unwrap();
+        let result = check_excessive_length(url_str, &parsed);
+        assert!(result.is_some(), "Should flag too many subdomains");
+    }
+
+    #[test]
+    fn test_excessive_length_normal_url() {
+        let url_str = "https://example.com/about";
+        let parsed = Url::parse(url_str).unwrap();
+        let result = check_excessive_length(url_str, &parsed);
+        assert!(result.is_none(), "Should not flag short, simple URL");
     }
 }
