@@ -1,0 +1,12 @@
+[
+  {
+    "code": "Epm1x5",
+    "original_url": "https://example.com",
+    "scan_result": {
+      "risk": "Low",
+      "score": 0,
+      "flags": []
+    },
+    "created_at": "2026-07-16T14:56:40Z"
+  }
+]
