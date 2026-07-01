@@ -1,3 +1,6 @@
+mod scanner;
+mod shortener;
+
 fn main() {
-    println!("Hello, world!");
+    println!("url-threat-shortener");
 }
