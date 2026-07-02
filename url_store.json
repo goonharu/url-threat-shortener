@@ -18,5 +18,25 @@
       "flags": []
     },
     "created_at": "2026-07-16T15:17:22Z"
+  },
+  {
+    "code": "3N6iV9",
+    "original_url": "https://example.com",
+    "scan_result": {
+      "risk": "Low",
+      "score": 0,
+      "flags": []
+    },
+    "created_at": "2026-07-17T04:15:16Z"
+  },
+  {
+    "code": "4fIV5d",
+    "original_url": "https://hello.com",
+    "scan_result": {
+      "risk": "Low",
+      "score": 0,
+      "flags": []
+    },
+    "created_at": "2026-07-17T04:15:58Z"
   }
 ]
