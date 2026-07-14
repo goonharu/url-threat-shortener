@@ -38,7 +38,7 @@ pub fn check_ip_literal(parsed: &Url) -> Option<String> {
 /// These TLDs are flagged because of historically high abuse rates, not because every site using them is maclicious.
 pub fn check_suspicious_tld(parsed: &Url) -> Option<String> {
     let suspicious_tlds = [
-        ".tk", ".mk", ".ga", ".cf", ".gq", // free TLDs, heavily abused
+        ".tk", ".ml", ".ga", ".cf", ".gq", // free TLDs, heavily abused
         ".xyz", ".top", ".click", ".buzz", // cheap TLDs, common in phishing
         ".rest", ".work", ".fit", ".loan", // spam-heavy TLDs
     ];
@@ -118,8 +118,10 @@ pub fn check_at_symbol_trick(raw: &str) -> Option<String> {
         raw
     };
 
-    // If there's an '@' before the first '/', someone is using the userinfo trick
-    let before_path = match after_scheme.find("/") {
+    // If there's an '@' before the first '/', '?' or '#', someone is using
+    // the userinfo trick. Query and fragment also end the host section, so an
+    // '@' inside them (e.g. "example.com?contact=me@mail.com") is not userinfo.
+    let before_path = match after_scheme.find(['/', '?', '#']) {
         Some(pos) => &after_scheme[..pos],
         None => after_scheme,
     };
@@ -382,6 +384,18 @@ mod tests {
     fn test_at_symbol_normal_url() {
         let result = check_at_symbol_trick("https://google.com/search?q=rust");
         assert!(result.is_none(), "Should not flag normal URL");
+    }
+
+    #[test]
+    fn test_at_symbol_in_query_without_path() {
+        let result = check_at_symbol_trick("https://example.com?contact=me@mail.com");
+        assert!(result.is_none(), "Should not flag '@' in query string");
+    }
+
+    #[test]
+    fn test_at_symbol_in_fragment_without_path() {
+        let result = check_at_symbol_trick("https://example.com#user@notes");
+        assert!(result.is_none(), "Should not flag '@' in fragment");
     }
 
     #[test]

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use url_threat_shortener::scanner::{RiskLevel, load_blocklist, scan_url};
 use url_threat_shortener::shortener::{
-    UrlMapping, generate_code, resolve, save_mapping, timestamp_now,
+    UrlMapping, generate_unique_code, resolve, save_mapping, timestamp_now,
 };
 
 const BANNER: &str = concat!(
@@ -112,7 +112,10 @@ fn cmd_shorten(
         println!("   The short link will still be created, but use caution.");
     }
 
-    let code = generate_code(6);
+    let code = match generate_unique_code(store, 6) {
+        Ok(c) => c,
+        Err(e) => return Err(format!("Error reading store: {}", e)),
+    };
     let mapping = UrlMapping {
         code: code.clone(),
         original_url: url.to_string(),
